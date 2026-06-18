@@ -22,7 +22,23 @@ export interface PriceTick {
   index: number
   stage: ReplayStage
   price: number
+  open: number
+  high: number
+  low: number
+  close: number
   changePct: number
+}
+
+export interface BollingerPoint {
+  middle: number
+  upper: number
+  lower: number
+}
+
+export interface MacdPoint {
+  dif: number
+  dea: number | null
+  histogram: number | null
 }
 
 export interface Trade {

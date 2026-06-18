@@ -3,10 +3,13 @@ import ipoData from './data/ipo-cases.json'
 import {
   INITIAL_CASH,
   TOTAL_TICKS,
+  bollingerBands,
   equity,
   executeTrade,
   generatePricePath,
+  macd as calculateMacd,
   maxDrawdown,
+  movingAverage,
   scoreRun,
 } from './lib/simulation'
 import type { IpoCase, Portfolio, ReplayStage, Trade } from './types'
@@ -74,26 +77,93 @@ function Landing({ onStart }: { onStart: (index: number) => void }) {
   )
 }
 
-function Chart({ points, visible, issuePrice }: { points: ReturnType<typeof generatePricePath>; visible: number; issuePrice: number }) {
-  const shown = points.slice(0, visible + 1)
-  const values = shown.map((p) => p.price).concat(issuePrice)
+type ChartMode = 'line' | 'candles'
+
+function Chart({ points, visible, issuePrice, mode, showMA, showBoll, showMacd }: {
+  points: ReturnType<typeof generatePricePath>
+  visible: number
+  issuePrice: number
+  mode: ChartMode
+  showMA: boolean
+  showBoll: boolean
+  showMacd: boolean
+}) {
+  const revealed = points.slice(0, visible + 1)
+  const windowStart = Math.max(0, revealed.length - 60)
+  const shown = revealed.slice(windowStart)
+  const ma5 = movingAverage(points, 5)
+  const ma10 = movingAverage(points, 10)
+  const ma20 = movingAverage(points, 20)
+  const boll = bollingerBands(points)
+  const macdValues = calculateMacd(points)
+  const values = shown.flatMap((point) => mode === 'candles' ? [point.low, point.high] : [point.close]).concat(issuePrice)
+  if (mode === 'candles' && showMA) {
+    ;[ma5, ma10, ma20].forEach((series) => series.slice(windowStart, visible + 1).forEach((value) => value !== null && values.push(value)))
+  }
+  if (mode === 'candles' && showBoll) {
+    boll.slice(windowStart, visible + 1).forEach((value) => value && values.push(value.upper, value.lower))
+  }
   const min = Math.min(...values) * 0.97
   const max = Math.max(...values) * 1.03
-  const x = (i: number) => 28 + (i / (TOTAL_TICKS - 1)) * 692
+  const step = 692 / Math.max(1, shown.length - 1)
+  const x = (i: number) => shown.length === 1 ? 28 : 28 + i * step
   const y = (value: number) => 25 + ((max - value) / Math.max(0.01, max - min)) * 280
-  const pathData = shown.map((p, i) => `${i ? 'L' : 'M'} ${x(i)} ${y(p.price)}`).join(' ')
+  const pathData = shown.map((point, index) => `${index ? 'L' : 'M'} ${x(index)} ${y(point.close)}`).join(' ')
+  const seriesPath = (series: Array<number | null>) => series
+    .slice(windowStart, visible + 1)
+    .map((value, index) => value === null ? null : `${index === 0 || series[windowStart + index - 1] === null ? 'M' : 'L'} ${x(index)} ${y(value)}`)
+    .filter(Boolean).join(' ')
+  const bollWindow = boll.slice(windowStart, visible + 1)
+  const bollDefined = bollWindow.map((value, index) => ({ value, index })).filter((item) => item.value)
+  const bollArea = bollDefined.length > 1 ? [
+    ...bollDefined.map(({ value, index }) => `${x(index)},${y(value!.upper)}`),
+    ...bollDefined.slice().reverse().map(({ value, index }) => `${x(index)},${y(value!.lower)}`),
+  ].join(' ') : ''
   const last = shown[shown.length - 1]
-  const positive = last.price >= issuePrice
+  const positive = last.close >= issuePrice
+  const macdWindow = macdValues.slice(windowStart, visible + 1)
+  const oscillatorValues = macdWindow.flatMap((value) => value ? [value.dif, value.dea ?? 0, value.histogram ?? 0] : [0])
+  const oscillatorMax = Math.max(0.001, ...oscillatorValues.map(Math.abs))
+  const macdY = (value: number) => 54 - (value / oscillatorMax) * 42
+  const oscillatorPath = (key: 'dif' | 'dea') => macdWindow.map((value, index) => {
+    const numberValue = value?.[key]
+    if (numberValue === null || numberValue === undefined) return null
+    const previous = index > 0 ? macdWindow[index - 1]?.[key] : null
+    return `${previous === null || previous === undefined ? 'M' : 'L'} ${x(index)} ${macdY(numberValue)}`
+  }).filter(Boolean).join(' ')
 
   return (
-    <div className="chart-wrap">
+    <div className={`chart-wrap ${showMacd && mode === 'candles' ? 'with-macd' : ''}`}>
       <svg viewBox="0 0 750 340" role="img" aria-label="模拟暗盘价格走势">
         {[45, 105, 165, 225, 285].map((gy) => <line key={gy} x1="28" y1={gy} x2="720" y2={gy} className="chart-grid" />)}
         <line x1="28" y1={y(issuePrice)} x2="720" y2={y(issuePrice)} className="issue-line" />
         <text x="34" y={y(issuePrice) - 7} className="issue-label">发行价 {price.format(issuePrice)}</text>
-        <path d={pathData} className={`chart-line ${positive ? 'up' : 'negative'}`} />
-        <circle cx={x(last.index)} cy={y(last.price)} r="5.5" className={`chart-dot ${positive ? 'up' : 'negative'}`} />
+        {mode === 'line' ? <>
+          <path d={pathData} className={`chart-line ${positive ? 'up' : 'negative'}`} />
+          <circle cx={x(shown.length - 1)} cy={y(last.close)} r="5.5" className={`chart-dot ${positive ? 'up' : 'negative'}`} />
+        </> : <>
+          {showBoll && bollArea && <polygon points={bollArea} className="boll-area" />}
+          {showBoll && <><path d={seriesPath(boll.map((value) => value?.upper ?? null))} className="indicator-line boll" /><path d={seriesPath(boll.map((value) => value?.lower ?? null))} className="indicator-line boll" /></>}
+          {shown.map((candle, index) => {
+            const up = candle.close >= candle.open
+            const candleWidth = Math.max(2.4, Math.min(7, step * 0.62))
+            return <g key={candle.index} className={up ? 'candle-up' : 'candle-down'}>
+              <line x1={x(index)} x2={x(index)} y1={y(candle.high)} y2={y(candle.low)} />
+              <rect x={x(index) - candleWidth / 2} y={Math.min(y(candle.open), y(candle.close))} width={candleWidth} height={Math.max(1.4, Math.abs(y(candle.open) - y(candle.close)))} />
+            </g>
+          })}
+          {showMA && <><path d={seriesPath(ma5)} className="indicator-line ma5" /><path d={seriesPath(ma10)} className="indicator-line ma10" /><path d={seriesPath(ma20)} className="indicator-line ma20" /></>}
+        </>}
       </svg>
+      {mode === 'candles' && showMacd && <div className="macd-panel">
+        <div className="macd-label"><span>MACD 12,26,9</span><i className="dif-key">DIF</i><i className="dea-key">DEA</i></div>
+        <svg viewBox="0 0 750 108" role="img" aria-label="MACD 指标">
+          <line x1="28" x2="720" y1="54" y2="54" className="macd-zero" />
+          {macdWindow.map((value, index) => value?.histogram === null || value?.histogram === undefined ? null : <rect key={windowStart + index} x={x(index) - 2} y={Math.min(54, macdY(value.histogram))} width="4" height={Math.max(1, Math.abs(macdY(value.histogram) - 54))} className={value.histogram >= 0 ? 'macd-up' : 'macd-down'} />)}
+          <path d={oscillatorPath('dif')} className="macd-dif" />
+          <path d={oscillatorPath('dea')} className="macd-dea" />
+        </svg>
+      </div>}
       <div className="chart-times"><span>16:15</span><span>16:45</span><span>17:15</span><span>17:45</span><span>18:15</span></div>
     </div>
   )
@@ -126,6 +196,10 @@ function Trading({ ipo, onExit }: { ipo: IpoCase; onExit: () => void }) {
   const [finished, setFinished] = useState(false)
   const [autoPlay, setAutoPlay] = useState(true)
   const [speed, setSpeed] = useState(1)
+  const [chartMode, setChartMode] = useState<ChartMode>('line')
+  const [showMA, setShowMA] = useState(false)
+  const [showBoll, setShowBoll] = useState(false)
+  const [showMacd, setShowMacd] = useState(false)
   const current = path[tick]
   const total = equity(portfolio, current.price)
   const pnl = total - INITIAL_CASH
@@ -143,7 +217,7 @@ function Trading({ ipo, onExit }: { ipo: IpoCase; onExit: () => void }) {
     setNotice(`${side === 'buy' ? '买入' : '卖出'} ${result.trade.shares.toLocaleString()} 股已成交`)
   }
 
-  function advance(step = 3) {
+  function advance(step = 5) {
     if (finished) return
     const next = Math.min(TOTAL_TICKS - 1, tick + step)
     setTick(next)
@@ -170,13 +244,17 @@ function Trading({ ipo, onExit }: { ipo: IpoCase; onExit: () => void }) {
       <section className="terminal-grid">
         <div className="market-panel panel">
           <div className="panel-head"><div><span className="eyebrow dark">SIMULATED GREY MARKET</span><h2>神秘新股 · 情境 {stages[current.stage]}</h2></div><div className={`quote ${current.changePct >= 0 ? 'positive' : 'negative'}`}><strong>{price.format(current.price)}</strong><span>{current.changePct >= 0 ? '+' : ''}{current.changePct.toFixed(2)}%</span></div></div>
-          <Chart points={path} visible={tick} issuePrice={ipo.issuePrice} />
+          <div className="chart-toolbar">
+            <div className="view-switch"><button className={chartMode === 'line' ? 'active' : ''} onClick={() => setChartMode('line')}>分时</button><button className={chartMode === 'candles' ? 'active' : ''} onClick={() => setChartMode('candles')}>K 线</button></div>
+            <div className={`indicator-switches ${chartMode === 'line' ? 'disabled' : ''}`}><span>指标</span><button className={showMA ? 'active ma-button' : ''} disabled={chartMode === 'line'} onClick={() => setShowMA((value) => !value)}>MA</button><button className={showBoll ? 'active boll-button' : ''} disabled={chartMode === 'line'} onClick={() => setShowBoll((value) => !value)}>BOLL</button><button className={showMacd ? 'active macd-button' : ''} disabled={chartMode === 'line'} onClick={() => setShowMacd((value) => !value)}>MACD</button></div>
+          </div>
+          <Chart points={path} visible={tick} issuePrice={ipo.issuePrice} mode={chartMode} showMA={showMA} showBoll={showBoll} showMacd={showMacd} />
           <div className="timeline-control">
-            <div><strong>{Math.round((tick / (TOTAL_TICKS - 1)) * 120)} 分钟</strong><span>行情进度 {Math.round((tick / (TOTAL_TICKS - 1)) * 100)}%</span></div>
+            <div><strong>{tick + 1} 分钟</strong><span>行情进度 {Math.round((tick / (TOTAL_TICKS - 1)) * 100)}%</span></div>
             <div className="playback-controls">
               <button className="play-toggle" onClick={() => setAutoPlay((value) => !value)}>{autoPlay ? 'Ⅱ 暂停' : '▶ 播放'}</button>
               <div className="speed-picker" aria-label="行情播放速度">{[1, 2, 4].map((value) => <button key={value} className={speed === value ? 'active' : ''} onClick={() => setSpeed(value)}>{value}×</button>)}</div>
-              <button className="advance" onClick={() => advance(3)}>推进 6 分钟 <ArrowIcon /></button>
+              <button className="advance" onClick={() => advance(5)}>快进 5 分钟 <ArrowIcon /></button>
             </div>
           </div>
         </div>
@@ -196,7 +274,7 @@ function Trading({ ipo, onExit }: { ipo: IpoCase; onExit: () => void }) {
 
         <div className="trades-panel panel"><div className="panel-title"><span>操作记录</span><span>{trades.length} 笔</span></div>{trades.length ? <div className="trade-log">{trades.slice(0, 5).map((t) => <div key={t.id}><span className={t.side === 'buy' ? 'buy-tag' : 'sell-tag'}>{t.side === 'buy' ? '买' : '卖'}</span><span>{t.shares.toLocaleString()} 股</span><strong>@ {price.format(t.price)}</strong><small>第 {Math.round(t.tick * 2)} 分钟</small></div>)}</div> : <div className="empty-log">尚未交易。先读信息，别急着按按钮。</div>}</div>
       </section>
-      <div className="sim-disclaimer">本页行情为基于真实最终结果生成的情境模拟，并非历史分钟行情。</div>
+      <div className="sim-disclaimer">本页 K 线及技术指标均基于情境模拟，并非历史分钟行情。</div>
     </main>
   )
 }

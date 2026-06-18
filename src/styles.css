@@ -89,6 +89,20 @@ footer { padding: 22px 5vw; display: flex; justify-content: space-between; borde
 .panel-head, .panel-title { display: flex; justify-content: space-between; align-items: center; }
 .panel-head { padding: 22px 26px 14px; }
 .panel-head h2 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+.chart-toolbar { min-height: 42px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #e5e4de; border-bottom: 1px solid #e5e4de; }
+.view-switch, .indicator-switches { display: flex; align-items: center; }
+.view-switch { padding: 2px; background: #e8e7e1; }
+.view-switch button, .indicator-switches button { border: 0; cursor: pointer; font-size: 10px; }
+.view-switch button { min-width: 48px; padding: 7px 10px; color: #727874; background: transparent; }
+.view-switch button.active { color: white; background: #303936; }
+.indicator-switches { gap: 5px; }
+.indicator-switches > span { margin-right: 4px; color: #858a86; font-size: 9px; }
+.indicator-switches button { min-width: 44px; padding: 7px 9px; color: #686e6a; background: #eeede8; }
+.indicator-switches button:disabled { cursor: not-allowed; opacity: .36; }
+.indicator-switches button.active { color: white; background: #4c5551; }
+.indicator-switches button.ma-button.active { background: #8c6d16; }
+.indicator-switches button.boll-button.active { background: #6652a5; }
+.indicator-switches button.macd-button.active { background: #235f8d; }
 .panel-title { height: 46px; padding: 0 18px; border-bottom: 1px solid #deded7; font-size: 12px; font-weight: 700; }
 .panel-title span:last-child { color: #818681; font-size: 10px; font-weight: 500; }
 .quote { text-align: right; font-family: 'DM Mono', monospace; }
@@ -98,7 +112,7 @@ footer { padding: 22px 5vw; display: flex; justify-content: space-between; borde
 .positive { color: var(--orange) !important; }
 .negative { color: var(--green) !important; }
 .chart-wrap { position: relative; padding: 0 12px; }
-.chart-wrap svg { display: block; width: 100%; height: 330px; overflow: visible; }
+.chart-wrap > svg { display: block; width: 100%; height: 330px; overflow: visible; }
 .chart-grid { stroke: #e4e3dc; stroke-width: 1; }
 .issue-line { stroke: #a2a6a2; stroke-width: 1; stroke-dasharray: 4 5; }
 .issue-label { fill: #7a817d; font: 10px 'DM Mono'; }
@@ -107,6 +121,28 @@ footer { padding: 22px 5vw; display: flex; justify-content: space-between; borde
 .chart-line.negative { stroke: var(--green); }
 .chart-dot.up { fill: var(--orange); stroke: white; stroke-width: 2; }
 .chart-dot.negative { fill: var(--green); stroke: white; stroke-width: 2; }
+.candle-up line, .candle-up rect { stroke: var(--orange); fill: var(--orange); }
+.candle-down line, .candle-down rect { stroke: var(--green); fill: var(--green); }
+.candle-up line, .candle-down line { stroke-width: 1; }
+.indicator-line { fill: none; stroke-width: 1.4; stroke-linejoin: round; }
+.indicator-line.ma5 { stroke: #d39b17; }
+.indicator-line.ma10 { stroke: #3578bc; }
+.indicator-line.ma20 { stroke: #9b5eb2; }
+.indicator-line.boll { stroke: #7765ac; stroke-width: 1.1; stroke-dasharray: 4 3; }
+.boll-area { fill: #8b75be; opacity: .08; }
+.macd-panel { position: relative; margin: -6px 12px 22px; border-top: 1px solid #e0dfd9; }
+.macd-panel svg { display: block; width: 100%; height: 108px; overflow: visible; }
+.macd-label { position: absolute; z-index: 1; top: 6px; left: 18px; display: flex; gap: 10px; color: #7d837f; font: 8px 'DM Mono'; }
+.macd-label i { font-style: normal; }
+.dif-key { color: #d39b17; }
+.dea-key { color: #3578bc; }
+.macd-zero { stroke: #c8c9c3; stroke-width: 1; }
+.macd-up { fill: var(--orange); opacity: .68; }
+.macd-down { fill: var(--green); opacity: .68; }
+.macd-dif, .macd-dea { fill: none; stroke-width: 1.4; }
+.macd-dif { stroke: #d39b17; }
+.macd-dea { stroke: #3578bc; }
+.chart-wrap.with-macd .chart-times { bottom: 5px; }
 .chart-times { position: absolute; left: 40px; right: 30px; bottom: 2px; display: flex; justify-content: space-between; color: #8b908d; font: 9px 'DM Mono'; }
 .timeline-control { min-height: 66px; padding: 10px 22px 12px 26px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #deded7; }
 .timeline-control div span, .timeline-control div strong { display: block; }
@@ -226,7 +262,13 @@ footer { padding: 22px 5vw; display: flex; justify-content: space-between; borde
   .terminal-grid { padding: 12px; grid-template-columns: 1fr; grid-template-areas: 'market' 'portfolio' 'intel' 'trades'; }
   .panel-head { padding: 18px; }
   .panel-head h2 { font-size: 14px; }
-  .chart-wrap svg { height: 260px; }
+  .chart-toolbar { padding: 7px 14px; align-items: flex-start; flex-direction: column; gap: 7px; }
+  .indicator-switches { width: 100%; }
+  .indicator-switches button { flex: 1; }
+  .chart-wrap { overflow-x: auto; overflow-y: hidden; }
+  .chart-wrap > svg, .macd-panel { min-width: 680px; }
+  .chart-wrap > svg { height: 270px; }
+  .macd-panel svg { min-width: 680px; }
   .timeline-control { padding: 10px 16px; }
   .timeline-control { align-items: flex-start; flex-direction: column; gap: 10px; }
   .playback-controls { width: 100%; }

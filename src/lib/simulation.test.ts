@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { IpoCase, Portfolio } from '../types'
-import { INITIAL_CASH, executeTrade, generatePricePath } from './simulation'
+import { INITIAL_CASH, bollingerBands, executeTrade, generatePricePath, macd, movingAverage } from './simulation'
 
 const ipo: IpoCase = {
   code: '00001', name: '测试', board: '主板', listDate: '2026-06-01', issuePrice: 20,
@@ -9,13 +9,41 @@ const ipo: IpoCase = {
 }
 
 describe('price simulation', () => {
-  it('creates 60 deterministic ticks ending at the real Futu outcome', () => {
+  it('creates 120 deterministic candles ending at the real Futu outcome', () => {
     const a = generatePricePath(ipo)
     const b = generatePricePath(ipo)
     expect(a).toEqual(b)
-    expect(a).toHaveLength(60)
+    expect(a).toHaveLength(120)
     expect(a.at(-1)?.price).toBeCloseTo(27, 3)
     expect(a.at(-1)?.changePct).toBe(35)
+    a.forEach((candle, index) => {
+      expect(candle.price).toBe(candle.close)
+      expect(candle.high).toBeGreaterThanOrEqual(Math.max(candle.open, candle.close))
+      expect(candle.low).toBeLessThanOrEqual(Math.min(candle.open, candle.close))
+      if (index > 0) expect(candle.open).toBeCloseTo(a[index - 1].close, 3)
+    })
+  })
+})
+
+describe('technical indicators', () => {
+  const points = generatePricePath(ipo)
+
+  it('warms up moving averages and Bollinger bands', () => {
+    const ma5 = movingAverage(points, 5)
+    const boll = bollingerBands(points)
+    expect(ma5.slice(0, 4)).toEqual([null, null, null, null])
+    expect(ma5[4]).not.toBeNull()
+    expect(boll[18]).toBeNull()
+    expect(boll[19]?.upper).toBeGreaterThanOrEqual(boll[19]!.middle)
+    expect(boll[19]?.lower).toBeLessThanOrEqual(boll[19]!.middle)
+  })
+
+  it('does not expose MACD before standard warm-up', () => {
+    const values = macd(points)
+    expect(values[24]).toBeNull()
+    expect(values[25]?.dea).toBeNull()
+    expect(values[32]?.histogram).toBeNull()
+    expect(values[33]?.histogram).not.toBeNull()
   })
 })
 
